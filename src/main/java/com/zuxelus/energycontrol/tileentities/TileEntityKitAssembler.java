@@ -1,6 +1,6 @@
 package com.zuxelus.energycontrol.tileentities;
 
-import com.hbm.interfaces.IConsumer;
+//import com.hbm.interfaces.IConsumer;
 import com.zuxelus.energycontrol.blocks.KitAssembler;
 import com.zuxelus.energycontrol.crossmod.CrossModLoader;
 import com.zuxelus.energycontrol.crossmod.ModIDs;
@@ -37,22 +37,24 @@ import net.minecraftforge.fml.common.Optional;
 
 @Optional.InterfaceList({
 	@Optional.Interface(modid = ModIDs.IC2, iface = "ic2.api.energy.tile.IEnergySink"),
-	@Optional.Interface(modid = ModIDs.HBM, iface = "com.hbm.interfaces.IConsumer"),
+	//@Optional.Interface(modid = ModIDs.HBM, iface = "com.hbm.interfaces.IConsumer"),
 	@Optional.Interface(modid = ModIDs.THERMAL_EXPANSION, iface = "cofh.redstoneflux.api.IEnergyReceiver"),
 })
-public class TileEntityKitAssembler extends TileEntityItemHandler implements ITickable, ITilePacketHandler, ISlotItemFilter, IEnergySink, IEnergyStorage, IConsumer, IEnergyReceiver {
+public class TileEntityKitAssembler extends TileEntityItemHandler implements ITickable, ITilePacketHandler, ISlotItemFilter, IEnergySink, IEnergyStorage, /*IConsumer,*/ IEnergyReceiver {
 	public static final byte SLOT_INFO = 0;
 	public static final byte SLOT_CARD1 = 1;
 	public static final byte SLOT_ITEM = 2;
 	public static final byte SLOT_CARD2 = 3;
 	public static final byte SLOT_RESULT = 4;
 	public static final byte SLOT_DISCHARGER = 5;
+	public static final byte SLOT_TRANSFORMER = 6;
 	private EnergyStorage storage;
 	private int buffer;
 	private static final int CONSUMPTION = 5;
+	private int upgrades;
 	private KitAssemblerRecipe recipe;
 	private int recipeTime; // client Only
-	public static final int CAPACITY = 2000;
+	public static final int CAPACITY = 5000;
 	public static final int OUTPUT = 32;
 	private double production;
 	private boolean addedToEnet;
@@ -209,9 +211,10 @@ public class TileEntityKitAssembler extends TileEntityItemHandler implements ITi
 		handleDischarger(SLOT_DISCHARGER);
 		if (!active)
 			return;
-		if (storage.getEnergyStored() >= CONSUMPTION) {
-			storage.extractEnergy(CONSUMPTION, false);
-			production += 1;
+		int energyNeeded = CONSUMPTION * (int) Math.pow(2, upgrades);
+		if (storage.getEnergyStored() >= energyNeeded) {
+			storage.extractEnergy(energyNeeded, false);
+			production += Math.pow(2, upgrades);
 			if (recipe != null && production >= recipe.time) {
 				ItemStack stack1 = getStackInSlot(SLOT_CARD1);
 				ItemStack stack2 = getStackInSlot(SLOT_ITEM);
@@ -235,12 +238,12 @@ public class TileEntityKitAssembler extends TileEntityItemHandler implements ITi
 	}
 
 	private void handleDischarger(int slot) {
-		int needed = Math.min(OUTPUT, storage.getMaxEnergyStored() - storage.getEnergyStored());
+		int needed = Math.min(OUTPUT * (int) Math.pow(4, upgrades), storage.getMaxEnergyStored() - storage.getEnergyStored());
 		if (needed <= 0)
 			return;
 		if (buffer > 0)
 			buffer -= storage.receiveEnergy(buffer, false);
-		needed = Math.min(OUTPUT, storage.getMaxEnergyStored() - storage.getEnergyStored());
+		needed = Math.min(OUTPUT * (int) Math.pow(4, upgrades), storage.getMaxEnergyStored() - storage.getEnergyStored());
 		ItemStack stack = getStackInSlot(slot);
 		if (!stack.isEmpty() && needed > 0) {
 			if (stack.getItem().equals(Items.LAVA_BUCKET)) {
@@ -255,7 +258,7 @@ public class TileEntityKitAssembler extends TileEntityItemHandler implements ITi
 					active = true;
 			} else if (CrossModLoader.isElectricItem(stack)) {
 				double old = storage.getEnergyStored();
-				storage.receiveEnergy((int) CrossModLoader.dischargeItem(stack, needed), false);
+				storage.receiveEnergy((int) CrossModLoader.dischargeItem(stack, needed, getSinkTier()), false);
 				if (!active && storage.getEnergyStored() > old)
 					markDirty();
 			}
@@ -277,7 +280,11 @@ public class TileEntityKitAssembler extends TileEntityItemHandler implements ITi
 
 	private void updateActive() {
 		active = false;
-		if (storage.getEnergyStored() < CONSUMPTION)
+		ItemStack stack = getStackInSlot(SLOT_TRANSFORMER);
+		upgrades = stack.getCount();
+		storage.setMax(OUTPUT * (int) Math.pow(4, upgrades));
+		int energyNeeded = CONSUMPTION * (int) Math.pow(2, upgrades);
+		if (storage.getEnergyStored() < energyNeeded)
 			return;
 		KitAssemblerRecipe newRecipe;
 		if (recipe == null) {
@@ -317,7 +324,7 @@ public class TileEntityKitAssembler extends TileEntityItemHandler implements ITi
 	// ------- Inventory -------
 	@Override
 	public int getSizeInventory() {
-		return 6;
+		return 7;
 	}
 
 	@Override
@@ -337,6 +344,8 @@ public class TileEntityKitAssembler extends TileEntityItemHandler implements ITi
 		case SLOT_DISCHARGER:
 			return stack.getCapability(CapabilityEnergy.ENERGY, null) != null ||
 				CrossModLoader.isElectricItem(stack) || stack.getItem().equals(Items.LAVA_BUCKET);
+		case SLOT_TRANSFORMER:
+			return stack.isItemEqual(CrossModLoader.getCrossMod(ModIDs.IC2).getItemStack("transformer"));
 		case SLOT_RESULT:
 		default:
 			return false;
@@ -356,15 +365,16 @@ public class TileEntityKitAssembler extends TileEntityItemHandler implements ITi
 
 	@Override
 	public int getSinkTier() {
-		return 1;
+		return 1 + upgrades;
 	}
 
 	@Override
 	public double injectEnergy(EnumFacing directionFrom, double amount, double voltage) {
 		double left = 0.0;
-		if (amount > 32) {
-			left = amount - 32;
-			amount = 32;
+		int input = OUTPUT * (int) Math.pow(4, upgrades);
+		if (amount > input) {
+			left = amount - input;
+			amount = input;
 		}
 		left += amount - storage.receiveEnergy((int) amount, false);
 		return left;
@@ -415,7 +425,7 @@ public class TileEntityKitAssembler extends TileEntityItemHandler implements ITi
 	}
 
 	// IConsumer
-	@Override
+	/*@Override
 	public long getMaxPower() {
 		return storage.getMaxEnergyStored();
 	}
@@ -426,9 +436,9 @@ public class TileEntityKitAssembler extends TileEntityItemHandler implements ITi
 	}
 
 	@Override
-	public void setPower(long arg0) {
-		// TODO Auto-generated method stub
-	}
+	public void setPower(long energyReceived) {
+		storage.setEnergy((int) energyReceived);
+	}*/
 
 	// IEnergyReceiver
 	@Override

@@ -8,6 +8,7 @@ import com.hbm.blocks.ModBlocks;
 import com.hbm.blocks.machine.MachineBoiler;
 import com.hbm.forgefluid.FFUtils;
 import com.hbm.forgefluid.ModForgeFluids;
+import com.hbm.inventory.HeatRecipes;
 import com.hbm.inventory.MachineRecipes;
 import com.hbm.tileentity.machine.*;
 import com.hbm.tileentity.machine.rbmk.RBMKDials;
@@ -49,7 +50,18 @@ public class HBMHooks {
 	}
 
 	@Hook
-	public static void update(TileEntityCondenser te) {
+	public static void update(TileEntityTowerLarge te) {
+		if (!map.containsKey(te) || te.getWorld().isRemote)
+			return;
+
+		int convert = Math.min(te.tanks[0].getFluidAmount(), te.tanks[1].getCapacity() - te.tanks[1].getFluidAmount());
+		ArrayList<Integer> values = new ArrayList<>();
+		values.add(convert);
+		map.put(te, values);
+	}
+
+	@Hook
+	public static void update(TileEntityTowerSmall te) {
 		if (!map.containsKey(te) || te.getWorld().isRemote)
 			return;
 
@@ -177,7 +189,7 @@ public class HBMHooks {
 		if (!map.containsKey(te) || te.getWorld().isRemote)
 			return;
 
-		Object[] outs = te.tanks[0].getFluid() != null ? MachineRecipes.getBoilerOutput(te.tanks[0].getFluid().getFluid()) : null;
+		Object[] outs = te.tanks[0].getFluid() != null ? HeatRecipes.getBoilerOutput(te.tanks[0].getFluid().getFluid()) : null;
 		int heat = te.heat;
 
 		if(heat > 2000)

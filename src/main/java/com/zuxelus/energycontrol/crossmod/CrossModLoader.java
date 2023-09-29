@@ -43,7 +43,7 @@ public class CrossModLoader {
 	public static void preInit() {
 		CROSS_MODS.put(ModIDs.IC2, Loader.isModLoaded("ic2-classic-spmod") ? new CrossIC2Classic() : Loader.isModLoaded(ModIDs.IC2) ? new CrossIC2Exp() : new CrossModBase());
 		loadCrossMod(ModIDs.TECH_REBORN, CrossTechReborn::new);
-		loadCrossMod(ModIDs.APPLIED_ENERGISTICS, CrossAppEng::new);
+		loadCrossModSafely(ModIDs.APPLIED_ENERGISTICS, () -> CrossAppEng::new);
 		loadCrossMod(ModIDs.EXTREME_REACTORS, CrossExtremeReactors::new);
 		loadCrossMod(ModIDs.BUILDCRAFT, CrossBuildCraft::new);
 		loadCrossModSafely(ModIDs.DRACONIC_EVOLUTION, () -> CrossDraconicEvolution::new);
@@ -205,10 +205,10 @@ public class CrossModLoader {
 		return false;
 	}
 
-	public static double dischargeItem(ItemStack stack, double amount) {
+	public static double dischargeItem(ItemStack stack, double amount, int tier) {
 		for (CrossModBase crossMod : CROSS_MODS.values())
 			if (crossMod.isElectricItem(stack)) {
-				double result = crossMod.dischargeItem(stack, amount);
+				double result = crossMod.dischargeItem(stack, amount, tier);
 				if (result > 0)
 					return result;
 			}
